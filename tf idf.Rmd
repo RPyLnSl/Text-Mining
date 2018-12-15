@@ -1,0 +1,218 @@
+---
+title: "tf-idf"
+author: "Boon Hong"
+date: "December 15, 2018"
+output: html_document
+---
+
+```{r}
+
+rm(list=ls())
+source("pgload.R")
+`load pg`("text")
+
+```
+
+tf-idf value 是 不常見但是重要的 
+
+```{r}
+austen_books() %>% 
+  unnest_tokens(bigrams , text , token = "ngrams" , n =2 ) -> austen_bigrams 
+
+```
+
+ngram => 連續單詞序列
+n = 2 => 兩個單詞組(二元組)
+
+```{r}
+
+austen_bigrams %>% 
+  count(bigrams , sort = T)
+
+```
+
+results isn't i want , "of the" is stop word
+
+use separate  delete has stop words and then unite
+
+```{r}
+
+austen_bigrams %<>% 
+  separate(bigrams,into= c("word","word1"),sep = " ") %>%
+  filter(!word %in% stop_words$word ,
+         !word1 %in% stop_words$word) %>% 
+  # count(word ,word1 , sort = T) %>% 
+  unite(word,word1 ,col = "bigrams", sep = " ") %>% 
+  count(book,bigrams) %>% 
+  bind_tf_idf(bigrams , book , n )  %>% 
+  arrange(desc(tf_idf))
+
+austen_bigrams %>% 
+  group_by(book) %>% 
+  top_n(10) %>% 
+  ggplot(aes(reorder(bigrams,tf_idf),tf_idf)) +
+  geom_col(show.legend = F) + 
+  coord_flip() + 
+  facet_wrap(~book,ncol=2,scales = "free_y") + 
+  labs(x=NULL)
+
+```
+
+在計算 bind_tf_idf 先 count 出現個數 , 因爲bind_t_idf 需要 term ,
+document , n .
+
+
+not 相關的數字 改變字的感情
+
+```{r}
+afinn <- get_sentiments("afinn")
+
+austen_books() %>%   
+  unnest_tokens(bigrams,text,token = "ngrams",n=2) %>% 
+  separate(bigrams , into = c("word","word1"),sep = " ") %>% 
+  filter(word %in% c("no","never","not","without")) %>% 
+  mutate(word = as.factor(word)) %>% 
+  inner_join(afinn , by = c(word1 = "word") ) %>% 
+  count(word1 ,word , score , sort = T) %>% 
+  mutate(score = score*n) %>% 
+  rename(wordx = word1) %>% 
+  group_by(word) %>% 
+  top_n(15,abs(score)) %>%   
+  ggplot(aes(reorder(wordx,score) , score)) +
+    geom_col() + 
+    coord_flip() +
+    facet_wrap(~word , scales = "free")
+
+```
+
+inner 指定 word1 = word ， not word比較因爲要保留第一字 not no 等
+
+
+```{r}
+set.seed(2017)
+austen_books() %>% 
+  unnest_tokens(ng , text , token = "ngrams" , n= 2 ) %>% 
+  separate(
+    ng , sep=" " , into = c("word1","word2")
+  ) %>% 
+    mutate(word1 = str_replace_all(word1,"_","") , 
+           word2 = str_replace_all(word2 ,"_","")) %>% 
+    filter(
+      !word1 %in% stop_words$word ,
+      !word2 %in% stop_words$word
+    ) %>%
+  count(word1,word2,sort = T) %>% 
+  filter(n>20) %>% 
+  graph_from_data_frame() %>%  # arules 想法 
+  ggraph(layout = "fr") +
+    geom_edge_link(aes(edge_alpha=n),show.legend = F ,arrow = a , end_cap = circle(.07,"inches")) +
+    geom_node_point(color = "lightblue",size =5) + 
+    geom_node_text(aes(label=name),vjust=1,hjust=1) + 
+    theme_void()
+
+a <- grid::arrow(type="closed",length = unit(.15,"inches"))
+```
+
+edge_alpha => link 透明度 follow n 
+a => 指定arrow 
+
+set function 
+```{r}
+
+count_bigrams <- function(dataset){
+  dataset %>% 
+  unnest_tokens(ng , text , token = "ngrams" , n= 2 ) %>% 
+  separate(
+    ng , sep=" " , into = c("word1","word2")
+  ) %>% 
+    mutate(word1 = str_replace_all(word1,"_","") , 
+           word2 = str_replace_all(word2 ,"_","")) %>% 
+    filter(
+      !word1 %in% stop_words$word ,
+      !word2 %in% stop_words$word
+    ) %>%
+  count(word1,word2,sort = T) 
+} 
+
+visualize_bigrams <- function(bigrams){
+
+  a <- grid::arrow(type="closed",length = unit(.15,"inches"))
+  bigrams %>% 
+  graph_from_data_frame() %>%  # arules 想法 
+    ggraph(layout = "fr") +
+      geom_edge_link(aes(edge_alpha=n),show.legend = F ,
+                     arrow = a , end_cap = circle(.07,"inches")) +
+      geom_node_point(color = "lightblue",size =5) + 
+      geom_node_text(aes(label=name),vjust=1,hjust=1) + 
+      theme_void()
+}
+
+```
+
+```{r}
+
+gutenbergr::gutenberg_download(10) -> kjv 
+kjv %<>% 
+  count_bigrams()
+
+kjv %>% 
+  filter(n>20) %>% 
+  visualize_bigrams()
+
+```
+
+
+```{r}
+  kjv %>%
+  filter(n>20) %>% 
+  graph_from_data_frame() %>%  # arules 想法 
+    ggraph(layout = "fr") +
+      geom_edge_link(aes(edge_alpha=n),show.legend = F) +
+      geom_node_point(color = "lightblue",size =5) + 
+      geom_node_text(aes(label=name),vjust=1,hjust=1) + 
+      theme_void()
+
+```
+
+修改 關鍵字相關性圖形
+
+```{r}
+austen_books() %>% 
+  filter(book=="Pride & Prejudice") %>% 
+  mutate(section = row_number()%/% 10 ) %>% 
+  filter(section >0) %>% 
+  unnest_tokens(word ,text) %>% 
+  filter(!word %in% stop_words$word) %>% 
+  pairwise_count(word,section,sort=T) %>% 
+  filter(item1 == "darcy") 
+
+```
+
+每10行一形式
+pairwise_count => 每個section 裏面同時出現出現常用單詞
+跟隨 Darcy 一起出現的單詞
+
+```{r}
+
+austen_books() %>% 
+  filter(book=="Pride & Prejudice") %>% 
+  mutate(section = row_number()%/% 10 ) %>% 
+  filter(section >0) %>% 
+  unnest_tokens(word ,text) %>% 
+  filter(!word %in% stop_words$word) %>% 
+  group_by(word) %>% 
+  filter(n()>=20) %>% 
+  pairwise_cor(word,section , sort=T) %>% 
+  filter(correlation > 0.15) %>% 
+  igraph::graph_from_data_frame() %>% 
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation),
+                 show.legend = F) +
+  geom_node_point(color="lightblue",size = 5)+
+  geom_node_text(aes(label =name),repel = T)
+
+```
+
+repel => not overlapping
+
+
