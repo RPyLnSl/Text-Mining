@@ -1,0 +1,502 @@
+---
+title: "Text Mining"
+author: "Boon Hong"
+date: "November 14, 2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+source("pgload.R")
+
+```
+
+```{r}
+# janeaustenr::sensesensibility
+
+austen_books() %>% 
+  group_by(book) %>% 
+  # filter(book=="Sense & Sensibility") %>%  # same for group by , is logic same isn't result same  
+  mutate(linenumber = row_number() , 
+         chapter = cumsum(str_detect(text,regex("^chapter [\\d]",ignore_case = T)))) %>% 
+  ungroup() %>% 
+  tidytext::unnest_tokens(words,text) -> tidyBook
+data("stop_words")
+# head(stop_words) 
+# tidyBook %>% 
+#   head
+tidyBook %>% 
+  rename(word=words)  %>% 
+  anti_join(stop_words) %>% 
+  count(word,sort = T) -> tidyBooks
+tidyBooks %>%
+  filter(n>600) %>% 
+  mutate(word = reorder(word,n)) %>% 
+  ggplot(aes(word,n)) + 
+    geom_col()+
+   coord_flip()+
+  xlab(NULL)
+
+
+```
+
+```{r}
+library(gutenbergr)
+gutenberg_download(c(35,36,5230,159)) -> hgwells
+
+hgwells  %>% 
+    mutate(linernumber=row_number()) %>% 
+    unnest_tokens(output = word,input = text) %>% 
+    anti_join(stop_words) -> hgwells
+
+hgwells %>% 
+    count(word) %>% 
+    filter(n>200) %>% 
+    ggplot(aes(word,n)) + 
+      geom_col() + 
+      coord_flip()
+
+gutenberg_download(c(1260,768,969,9182,767)) -> bronte
+
+bronte %>% 
+  unnest_tokens(word,text) %>% 
+  anti_join(stop_words) -> bronte
+
+
+```
+
+```{r}
+bind_rows(mutate(bronte,author="Bronte Sisters"),
+          mutate(hgwells,author="H.G.Wells"),
+          mutate(tidyBooks,author="Jane Austen"))  %>% 
+  mutate(word = str_extract(word,"[a-z]+")) %>% 
+  count(author,word)  %>% 
+  group_by(author) %>% 
+  mutate( proportion = nn/sum(nn)) -> frequency
+
+frequency %>% 
+  rename(n =nn) %>% 
+  select(-n) %>% 
+  spread(author,proportion) %>%  
+  gather(author,proportion,`Bronte Sisters`:`Jane Austen`) -> frequency
+  
+# frequency 
+# frequency %>% 
+#   ggplot(aes(x = proportion, y =`Jane Austen` , color = abs(`Jane Austen` - proportion )))
+#   geom_abline(color= "gray40" ,lty = 2) + 
+#   geom_jitter(alpha= 0.1,size = 2.5 , width=0.3 , height = 0.3) 
+
+```
+
+correlation test 
+
+```{r}
+frequency %>% 
+  group_by(author) %>% 
+  summarise(n())
+
+frequency %>% 
+  head
+
+# frequency %$%
+#   author[author=="Bronte Sisters"] %>% 
+#   frequency[.,] %>% na.omit()
+
+frequency %>% 
+  select(everything()) 
+
+frequency[frequency$author== "Bronte Sisters",] -> Br
+frequency[frequency$author== "Jane Austen",] -> Ja
+frequency[frequency$author== "H.G.Wells",] -> HG
+
+# cor.test(Br$proportion,Ja$proportion)
+# cor.test(Ja$proportion,HG$proportion)
+
+```
+
+結果對於 想要的不符合 
+
+```{r}
+require(graphics)
+pairs(USJudgeRatings)
+data("USJudgeRatings") 
+USJudgeRatings %>% 
+  head
+cor.test(~ CONT + INTG, data = USJudgeRatings)
+
+USJudgeRatings %$%
+  cor.test(CONT,INTG)
+
+```
+
+```{r}
+library(tidytext)
+sentiments
+get_sentiments("bing")
+```
+
+```{r}
+library(janeaustenr)
+austen_books() %>% 
+    group_by(book) %>% 
+    mutate(linenumber = row_number() ,
+           chapter = cumsum(
+             str_detect(
+               text,regex("^chapter[\\d]",ignore_case = T)
+               )
+             )
+           ) %>% 
+  ungroup() %>% 
+  unnest_tokens(word,text) -> tidyBooks
+tidyBooks %>% 
+  head
+
+get_sentiments("nrc") %>% 
+  filter(sentiment == "joy") -> nrcjoy
+nrcjoy %>% 
+  head
+
+tidyBooks %>% 
+  filter(book=="Emma") %>% 
+    inner_join(nrcjoy) %>% 
+    count(word,sort = T) 
+
+tidyBooks %>% 
+  inner_join(get_sentiments("bing")) %>% 
+  count(book,index= linenumber %/% 80 ,sentiment) %>%   
+  spread(sentiment, n) %>% 
+  mutate(sentiment = positive - negative) 
+    ggplot(aes(index , sentiment ,fill=book)) +
+    geom_col(show.legend = F) +
+    facet_wrap(~book , ncol = 2,scales = "free_x")
+   
+```
+
+得出結論說在這8本書 都邊 正向的情感 發展 
+
+```{r}
+
+tidyBooks %>% 
+  filter(book == "Pride & Prejudice") -> `Pride & Prejudice`
+
+`Pride & Prejudice` %>%
+  inner_join(get_sentiments("afinn")) %>% 
+  group_by(index= linenumber %/% 80) %>% 
+  summarise(sentiment = sum(score)) %>% 
+  mutate(method = "Afinn") -> afinn
+
+`Pride & Prejudice` %>% 
+  inner_join(get_sentiments("bing")) %>% 
+  count(index = linenumber %/% 80 ,sentiment) %>% 
+  spread(sentiment , n) %>% 
+  mutate( sentiment = positive - negative) %>% 
+  mutate(method = "Bing") -> bing
+
+`Pride & Prejudice` %>% 
+  inner_join(get_sentiments("nrc")) %>% 
+  filter(sentiment %in% c("positive","negative")) %>%  
+  # group_by(index ) %>% 
+  count( index = linenumber %/% 80 , sentiment) %>%
+  spread(sentiment,n) %>% 
+  mutate(sentiment = positive - negative) %>% 
+  mutate(method = "Nrc") -> nrc
+
+afinn %>% 
+  head(3)
+
+bing %>% 
+  head(3)
+
+nrc %>%
+  head(3)
+
+bind_rows(afinn,nrc,bing) %>% 
+  ggplot(aes(index , sentiment , fill=method)) +
+    geom_col(show.legend = F) +
+      facet_wrap(~method,ncol = 1,scales = "free_y")
+
+stop_words %>% 
+  head
+
+`custom stop words ` <- bind_rows(
+  data_frame(word = c("miss"),
+             lexicon= c("custom")),stop_words) 
+library(wordcloud)
+
+tidyBooks %>% 
+  anti_join(`custom stop words `) %>% 
+  mutate(word = str_extract(string = word,
+                            pattern = regex("[a-z]+")
+                            )
+         ) %>% 
+  count(word) %>% 
+  top_n(10)
+  with(wordcloud(word,n,max.words = 100))
+library(reshape2)
+
+tidyBooks %>%
+  inner_join(get_sentiments("bing")) %>% 
+  count(word , sentiment , sort = T ) %>% 
+  # spread(sentiment,n,fill = 0) %>%
+  # arrange(word) %>% 
+  acast(word ~ sentiment , value.var = "n" , fill = 0) %>%
+  comparison.cloud(colors = c("gray20","gray80"),
+                    max.words = 100)
+
+```
+
+```{r}
+
+tidyBooks %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(index = linenumber %/% 80 , sentiment) %>% 
+  spread(sentiment , n) %>%  
+  # melt(id=c("index")) %>% head
+  gather(sentiment , n , negative:positive)
+
+```
+單字存在 i amn't happing << 從單詞出發的話 會產生 情感分析錯誤的問題 
+
+```{r}
+data_frame(text = prideprejudice) %>% 
+  unnest_tokens(sentence,text,token = "sentences") -> `pandp sentences`
+`pandp sentences` %>% 
+  .[2,]
+
+austen_books() %>% 
+  group_by(book) %>% 
+  unnest_tokens(chapeter , text , token="regex" , pattern = "Chapter|CHAPTER [\\dIVXLC]")  %>% 
+  ungroup() -> austen_chapter 
+
+austen_chapter %>% 
+  group_by(book) %>% 
+  summarise(chapeters = n())
+
+
+
+```
+
+挖掘金融文章 
+
+```{r}
+library(tm.plugin.webmining)
+library(purrr)
+company <- c("Microsoft","Apple","Google","Amazon",
+             "Facebook","Twitter","IBM","Yahoo","Netflix")
+symbol <- c("MSFT","AAPL","GOOG","AMZN","FB","TWTR","IBM","YHOO","NFLX")
+
+download_articles <- function(symbol){
+  WebCorpus(YahooFinanceSource(symbol))
+} 
+data_frame(company = company , symbol = symbol) %>% 
+  mutate(corpus = map(symbol ,download_articles)) ->`stock artices`
+```
+
+```{r}
+`stock artices` %>% 
+  unnest(map(corpus,tidy)) %>% 
+  unnest_tokens(words,text) %>% 
+  select(company,datetimestamp,words,id,heading) -> `stock tokens`
+
+`stock tokens` %>% 
+  count(company,words) %>% 
+  filter(!str_detect(words,"\\d+")) %>%  
+  bind_tf_idf(words,company,n) %>% 
+  group_by(company) %>% 
+  arrange(-tf_idf) %>%
+  top_n(8) %>% 
+  ungroup() %>% 
+  ggplot(aes(reorder(words,tf_idf),tf_idf)) +
+    geom_col() + 
+    coord_flip() +
+    facet_wrap(~company,scales = "free")
+  
+```
+
+```{r}
+`stock tokens` %>% 
+  rename(word = words ) %>% 
+  anti_join(stop_words , by="word") %>% 
+  count(word,id,sort = T) %>% 
+  inner_join(get_sentiments("afinn") , by="word") %>% 
+  group_by(word) %>% 
+  summarise(contribution =sum(n*score)) %>% 
+  top_n(12,abs(contribution)) %>% 
+  ggplot(aes(reorder(word,contribution),contribution)) + 
+    geom_col() + 
+    coord_flip() + 
+    labs(
+      x = "words" ,
+     y = "Frequency of word * AFINN score" 
+    )
+# 不適合 金融數據 debt 不一定是不好的 
+
+```
+
+
+```{r}
+`stock tokens`  %>% 
+  count(words) %>% 
+  rename(word = words) %>% 
+  inner_join(get_sentiments("loughran"),by="word") %>% 
+  group_by(sentiment) %>%
+  top_n(5,n) %>% 
+  ungroup() %>% 
+  ggplot(aes(reorder(word,n) , n)) + 
+    geom_col() + 
+    coord_flip() + 
+    facet_wrap(~sentiment,scales = "free") 
+
+```
+
+```{r}
+
+`stock artices` %>% 
+  unnest(map(corpus,tidy)) %>% 
+  unnest_tokens(words,text) %>% 
+  select(company,datetimestamp,words,id,heading) -> `stock tokens`
+
+`stock tokens` %>% 
+  rename(word = words) %>% 
+  inner_join(get_sentiments("loughran"),by="word") %>% 
+  count(sentiment , company) %>% 
+  spread(sentiment,n,fill=0) -> `stock sentiment count`
+
+`stock sentiment count` %>% 
+  mutate(score = (positive - negative)/(positive+negative) ) %>% 
+  ggplot(aes(reorder(company,score),score,fill = score > 0)) + 
+    geom_col(show.legend = F) + 
+    coord_flip() +
+    xlab("company")
+
+```
+
+DTM 資料 整潔
+```{r}
+library(tm)
+data("AssociatedPress",package = "topicmodels")
+AssociatedPress
+```
+
+```{r}
+(AssociatedPress) %>% 
+  # class
+  # Terms()
+  tidy() %>% 
+  rename(word = term) %>% 
+    inner_join(get_sentiments("bing"),by="word") %>% 
+    count(sentiment, word) %>% 
+    filter(n>100)  %>% 
+    mutate( n = ifelse(sentiment=="negative",-n,n)) %>% 
+    ggplot(aes(reorder(word,n) , n , fill = n>0)) +
+      geom_col(show.legend = F) + 
+      coord_flip() + 
+      xlab("word")
+    # spread(sentiment ,count)
+    
+```
+除了 tidy 還有 quanteda 的 dfm 
+
+```{r}
+data("data_corpus_inaugural" , package = "quanteda") %>% class
+quanteda::dfm(data_corpus_inaugural ) -> `inaug dfm`
+`inaug td` <-  tidy(`inaug dfm`)
+`inaug td`  %>%
+    # bind_tf_idf(document , term , count)
+    bind_tf_idf(term , document , count) %>% 
+    arrange(-tf_idf) %>% 
+    group_by(document) %>% 
+    top_n(10,tf_idf) 
+    # ggplot(aes(reorder(term,tf_idf),tf_idf)) + 
+    #   geom_col() + 
+    #   coord_flip() +
+    #   facet_wrap(~document) 
+
+```
+
+```{r}
+library(lubridate)
+`inaug td` %>%
+  # mutate(year = 
+  # str_extract(
+  #   document,"[:digit:]{4}"
+  #   )
+  # ) %>%
+  # select(-document) %>% 
+  # select(year,everything()) %>% 
+  extract(document,"year","(\\d)+",convert = T) %>% 
+  complete(year,term,fill = list(count = 0 )) %>% 
+  group_by(year) %>% 
+  mutate(year_total = sum(count)) %>% 
+  filter(term %in% c("god","america","foreign","union","constitution","freedom")) %>% 
+  ggplot(aes(year, count/ year_total)) + 
+    geom_point()  + 
+    geom_smooth() + 
+    facet_wrap(~term , scales = "free_y") 
+    scale_y_continuous(labels = scales::parse_format())
+```
+
+austen books 轉 dtm 
+```{r}
+austen_books() %>% 
+  unnest_tokens(word,text) %>% 
+  count(book,word)  %>% 
+  cast_dtm(book ,word ,n)
+```
+
+LDA 
+
+```{r}
+library(topicmodels)
+data("AssociatedPress")
+AssociatedPress %>% 
+  LDA(.,k=2 ,control = list(seed=1234)) -> `ap lda`
+
+`ap lda` %>% tidy(matrix = "beta") -> `ap topics`   
+`ap topics` %>%   # beta  將每個主題 作??? 詞組合 來估計
+  group_by(topic) %>% 
+    top_n(10 , beta) %>%
+    ungroup() %>% 
+    arrange(topic , -beta) %>% 
+    ggplot(aes(reorder(term,beta),beta)) + 
+      geom_col() + 
+      coord_flip() + 
+      facet_wrap(~topic,scales = "free") 
+
+```
+
+主題1 常出現的字詞 與 topic 2 
+
+```{r}
+`ap topics` %>% 
+  mutate(
+    topic = paste0("topic", topic)
+  ) %>% 
+  spread(
+    topic , beta
+  ) %>% 
+  filter(topic1 > .001 | topic2 > .001) %>% 
+  mutate(log_ratio = log2( topic2 / topic1 )) %>%  
+  top_n(15,abs(log_ratio))
+  ggplot(aes(reorder(term,log_ratio),log_ratio)) + 
+    geom_col() +
+    coord_flip()
+
+```
+ log2 >> 算差異最大的單詞 
+ 
+```{r}
+`ap lda` %>%  # 每個文檔 主題 
+  tidy(matrix = "gamma") -> `ap documents`
+`ap documents` %>% 
+  head(20)  # gamma 0.24 document 1 單字裏 有0.24 由 topic1 生成
+```
+
+博大的圖書館???藏
+
+```{r}
+
+```
+
+

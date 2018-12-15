@@ -1,0 +1,140 @@
+---
+title: "New Analysis"
+author: "Boon Hong"
+date: "November 4, 2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r include=FALSE}
+source("pgload.R")
+rm(list = ls())
+dev.off()
+```
+
+```{r}
+"https://en.wikipedia.org/wiki/Black_Monday_(1987)" %>% 
+  GET() %>% 
+    content(as="text") %>% 
+    read_html() %>% 
+    html_nodes(css = "#content") %>% 
+    .[[1]] %>%
+    (function(node){
+      node %>% html_nodes(xpath = "//p") %>% html_text()
+    })(.) -> df 
+```
+
+```{r}
+df %>% 
+  as.tibble() -> df 
+```
+
+```{r}
+df %>% 
+  head
+```
+
+資料抽取解決辦法 , 雖然對於想要做的事情沒有影響
+
+```{r}
+df %>% as.matrix(ncol=15) -> df.of.Matrix
+# df %>% as.tibble() %>% .[[1]]
+```
+
+新增空白字典 ， 系統預設每個單詞分割 
+
+```{r create dict}
+cutter <- worker()
+```
+
+```{r}
+cutter$bylines <- F # 分行 if TRUE
+df.of.Matrix %>% 
+  # .[1] %>%
+  segment(cutter) %>%  # or cutter[.]
+  as.tibble() %>% 
+  table() %>% 
+  sort(decreasing = T) -> df.of.cutter
+```
+
+```{r ggplot 操作}
+df.of.cutter %>% 
+  as.tibble() -> df.of.cutter
+names(df.of.cutter) <- c("words","value")
+df.of.cutter %>%
+  filter(value>7) %>% 
+  ggplot(aes(words,value)) + 
+    geom_point() + 
+    coord_flip() -> x
+ggsave(x,device = "png",filename = "words.png")
+rm(x)
+```
+
+對於上述圖形發現說其實有意義的字匯都在1~20 之間 ， 20以上大多數為一些助詞介詞以及連接詞
+
+製作字云
+```{r}
+library(tm)
+library(wordcloud)
+data("crude")
+crude %>% 
+  str() 
+crude <- tm_map(crude,removePunctuation)
+crude <- tm_map(crude, function(x)removePunctuation(x,stopwords()))
+tdm <- TermDocumentMatrix(crude)
+m <- as.matrix(tdm)
+v <- sort(rowSums(m),decreasing = T)
+d <- data.frame(word=names(v),freq=v)
+wordcloud::wordcloud(d$word,d$freq,random.order = F,colors = brewer.pal(8,"BrBG"))
+```
+
+logging : 
+
+ 把字典的詞性分清楚 例如中性，褒義，貶義.etc
+.
+.
+.
+
+```{r}
+"https://www.cwb.gov.tw/V7/climate/monthlyData/Data/mD201810.htm" %>% 
+  GET() %>% 
+  httr::content(as = "text") %>%
+  read_html() %>%
+  rvest::html_table(fill = T) %>% 
+  unlist()
+  as_tibble() 
+ 
+
+  
+```
+
+```{r}
+
+countz <- 0 
+cutters <- jiebaR::worker()
+data("words")
+words %>% 
+  head(100)
+badwords <- c("is","how","to","of","this","much","us","from","m","can","back","hit")
+"https://www.bbc.com/news/world" %>% 
+  GET() %>%  
+  httr::content(as="text") %>%
+  read_html() %>% 
+  html_nodes(".distinct-component-group div:nth-child(1) .faux-block-link .title-link__title-text") %>% 
+  html_text() %>% 
+  as.tibble() %>% 
+  .$value %>% 
+  cutters[.] %>% 
+  str_to_lower -> x
+
+ifelse(x==badwords,NA,x)
+
+  # as_vector %>% 
+  (function(nodes){
+    gsub(badwords,NA,nodes)
+  })(.)
+  str_replace()
+
+```
+
