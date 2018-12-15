@@ -211,6 +211,24 @@ austen_books() %>%
   geom_node_point(color="lightblue",size = 5)+
   geom_node_text(aes(label =name),repel = T)
 
+# setting edge_width , 使得相關性高更顯著
+  austen_books() %>% 
+  filter(book=="Pride & Prejudice") %>% 
+  mutate(section = row_number()%/% 10 ) %>% 
+  filter(section >0) %>% 
+  unnest_tokens(word ,text) %>% 
+  filter(!word %in% stop_words$word) %>% 
+  group_by(word) %>% 
+  filter(n()>=20) %>% 
+  pairwise_cor(word,section , sort=T) %>% 
+  filter(correlation > 0.15) %>% 
+  igraph::graph_from_data_frame() %>% 
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation ,edge_width =(correlation*0.1 )),
+                 show.legend = F) +
+  geom_node_point(color="lightblue",size = 2)+
+  geom_node_text(aes(label =name),repel = T)
+
 ```
 
 repel => not overlapping
