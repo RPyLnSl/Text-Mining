@@ -13,7 +13,7 @@ source("pgload.R")
 
 ```
 
-tf-idf value 是 不常見但是重要的 
+tf-idf value 是 不常見但是重要的單字 ， 原理是降低常見的詞權重 ，提高不常見權重 ， 在經過過濾 stop words 達到 ~ .
 
 ```{r}
 austen_books() %>% 
