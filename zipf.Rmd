@@ -1,0 +1,61 @@
+---
+title: "zipf theorem"
+author: "Boon Hong"
+date: "December 18, 2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup}
+source("pgload")
+`load pg`("text")
+```
+
+```{r}
+book_words <- austen_books() %>% 
+  unnest_tokens(word,text) %>% 
+  count(book,word,sort = T) %>% 
+  ungroup()
+
+book_words %>% 
+  group_by(book) %>% 
+  summarise(total = sum(n)) -> total_books
+  
+left_join(book_words,total_books) %>% 
+  group_by(book) %>% 
+  mutate(rank = row_number() ,
+      `term frequency` = n/total ) -> rank_subset 
+
+rank_subset %>% 
+      ggplot(aes(rank , `term frequency` , color = book)) +
+        geom_line(size=1.1 , alpha = 0.8 , show.legend = F) + 
+        scale_x_log10() + 
+        scale_y_log10()
+
+rank_subset %>% 
+  filter(rank < 500 , 
+         rank > 10
+         ) -> rank_lm 
+
+
+```
+
+& => 同時 " , "
+
+
+```{r}
+
+lm(log10(rank_lm$`term frequency`) ~ log10(rank),data = rank_lm) %>% 
+  summary()
+
+rank_subset %>% 
+      ggplot(aes(rank , `term frequency` , color = book)) +
+        geom_line(size=1.1 , alpha = 0.8 , show.legend = F) +
+        geom_abline(slope = -1.1125 , intercept = -0.6226,linetype = 2 ) + 
+        scale_x_log10() + 
+        scale_y_log10()
+
+```
+
+經典的 zipf 定律 
