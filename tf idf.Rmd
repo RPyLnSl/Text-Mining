@@ -230,7 +230,7 @@ austen_books() %>%
   geom_node_text(aes(label =name),repel = T)
 
 ```
-
+phi 係數 => 同一 section 中 單詞出現的頻率來找到單詞之間 phi 係數 相關性 
 repel => not overlapping
 
 
